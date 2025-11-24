@@ -22,9 +22,9 @@
         'data' => null,
     ];
 
-    define('PROXY_URL', 'https://openrouter.ai/api/v1/chat/completions');
-    define('MODEL_NAME', 'openai/gpt-4o-mini');
-    define('API_KEY', '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');
+    define('PROXY_URL', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent');
+    define('MODEL_NAME', 'gemini-2.0-flash');
+    define('API_KEY', 'AIzaSyAPIzaHVW7SymO5OxM2X82ouT75BE6bCrk');
     $input = json_decode(file_get_contents("php://input"), true);
 
 

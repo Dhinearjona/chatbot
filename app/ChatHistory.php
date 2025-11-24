@@ -56,32 +56,39 @@ class ChatHistory
         ]);
 
         $history = $this->getChatHistory()['data'];
-
-        $messages = [];
-        $messages[] = [
-            'role' => 'system',
-            'content' => "I am Sir Dhine, a cheerful and patient K-12 teacher in the Philippines. You use Tagalog and simple English. Answer based on the student's question in a friendly and engaging manner, always asking 'Naiintindihan mo ba?' at the end."
-        ];
-
+        $contents = [];
         foreach ($history as $row) {
-            $messages[] = [
-                'role' => $row['role'],
-                'content' => $row['content']
+            $contents[] = [
+                'parts' => [
+                    [
+                        'text' => $row['content']
+                    ]
+                ]
             ];
         }
+
+        $requestBody = [
+            'contents' => $contents,
+            'systemInstruction' => [
+                'parts' => [
+                    [
+                        'text' => "I am Sir Dhine, a cheerful and patient K-12 teacher in the Philippines. You use Tagalog and simple English. Answer based on the student's question in a friendly and engaging manner, always asking 'Naiintindihan mo ba?' at the end."
+                    ]
+                ]
+            ],
+            'generationConfig' => [
+                'temperature' => 0.6,
+                'maxOutputTokens' => 300
+            ]
+        ];
 
         $ch = curl_init(PROXY_URL);
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode([
-                'model' => MODEL_NAME,
-                'messages' => $messages,
-                'temperature' => 0.6,
-                'max_tokens' => 300
-            ]),
+            CURLOPT_POSTFIELDS => json_encode($requestBody),
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
-                'Authorization' => 'Bearer ' . API_KEY
+                'X-goog-api-key: ' . API_KEY
             ],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 60,
@@ -93,8 +100,8 @@ class ChatHistory
         $reply = 'Sorry, I cannot answer that question right now.';
         $json = json_decode($response, true);
 
-        if (isset($json['choices'][0]['message']['content'])) {
-            $reply = trim($json['choices'][0]['message']['content']);
+        if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
+            $reply = trim($json['candidates'][0]['content']['parts'][0]['text']);
         }
 
         $this->addChatHistory([
