@@ -39,12 +39,65 @@ class ChatHistory
         $stmt->bindParam(':role', $data['role']);
         $stmt->bindParam(':message', $data['message']);
         $stmt->execute();
-        return response('success', 'Chat history added successfully', ['id' => $this->db->lastInsertId()]);
+
+        return response('success', 'Chat history added successfully', [
+            'id' => $this->db->lastInsertId()
+        ]);
+    }
+
+    public function search($data)
+    {
+        $query = isset($data['q']) ? $data['q'] : '';
+
+        if (empty($query)) {
+            return response('error', 'Search query is required', null);
+        }
+
+        $postData = ['q' => $query];
+        if (isset($data['location'])) {
+            $postData['location'] = $data['location'];
+        }
+        if (isset($data['gl'])) {
+            $postData['gl'] = $data['gl'];
+        }
+        if (isset($data['hl'])) {
+            $postData['hl'] = $data['hl'];
+        }
+
+        $curl = curl_init();
+        curl_setopt_array($curl, array(
+            CURLOPT_URL => SERPER_URL,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_ENCODING => '',
+            CURLOPT_MAXREDIRS => 10,
+            CURLOPT_TIMEOUT => 0,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CUSTOMREQUEST => 'POST',
+            CURLOPT_POSTFIELDS => json_encode($postData),
+            CURLOPT_HTTPHEADER => array(
+                'X-API-KEY: ' . SERPER_API_KEY,
+                'Content-Type: application/json'
+            ),
+        ));
+
+        $searchResponse = curl_exec($curl);
+        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        if ($httpCode === 200) {
+            return response('success', 'Search completed successfully', json_decode($searchResponse, true));
+        }
+
+        return response('error', 'Search request failed', [
+            'http_code' => $httpCode,
+            'response' => $searchResponse
+        ]);
     }
 
     public function sendMessage($data)
     {
-        $message = trim($data['message']);
+        $message = trim($data['message'] ?? '');
 
         if (empty($message)) {
             return response('error', 'Message is required', null);
@@ -58,7 +111,9 @@ class ChatHistory
         $history = $this->getChatHistory()['data'];
         $contents = [];
         foreach ($history as $row) {
+            $role = $row['role'] === 'assistant' ? 'model' : 'user';
             $contents[] = [
+                'role' => $role,
                 'parts' => [
                     [
                         'text' => $row['content']
@@ -82,26 +137,41 @@ class ChatHistory
             ]
         ];
 
-        $ch = curl_init(PROXY_URL);
+        $url = PROXY_URL . '?key=' . urlencode(API_KEY);
+        $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($requestBody),
             CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'X-goog-api-key: ' . API_KEY
+                'Content-Type: application/json'
             ],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 60,
         ]);
 
         $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
 
         $reply = 'Sorry, I cannot answer that question right now.';
         $json = json_decode($response, true);
 
-        if (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
+        if ($curlError) {
+            $reply = 'Error connecting to API: ' . $curlError;
+        } elseif ($httpCode !== 200) {
+            $errorMsg = 'API request failed';
+            if (isset($json['error']['message'])) {
+                $errorMsg = $json['error']['message'];
+            } elseif (isset($json['error'])) {
+                $errorMsg = is_string($json['error']) ? $json['error'] : json_encode($json['error']);
+            }
+            $reply = 'API Error (HTTP ' . $httpCode . '): ' . $errorMsg;
+        } elseif (isset($json['candidates'][0]['content']['parts'][0]['text'])) {
             $reply = trim($json['candidates'][0]['content']['parts'][0]['text']);
+        } elseif (isset($json['error'])) {
+            $errorMsg = isset($json['error']['message']) ? $json['error']['message'] : json_encode($json['error']);
+            $reply = 'API Error: ' . $errorMsg;
         }
 
         $this->addChatHistory([
